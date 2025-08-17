@@ -19,27 +19,29 @@ from backtester import CryptoBacktester
 def print_banner():
     """Print application banner"""
     print("""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                    🚀 CRYPTOCURRENCY TRADING SYSTEM 🚀                     ║
-║                                                                              ║
-║  High-Win-Rate Day Trading Strategy for BTC, ETH, and SOL                  ║
-║  Timeframes: 30m and 1H                                                    ║
-║  Features: Multi-indicator analysis, backtesting, and live signals         ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+\033[38;2;102;126;234m╔══════════════════════════════════════════════════════════════════════════════╗\033[0m
+\033[38;2;102;126;234m║                    🚀 CRYPTOCURRENCY TRADING SYSTEM 🚀                     ║\033[0m
+\033[38;2;102;126;234m║                                                                              ║\033[0m
+\033[38;2;102;126;234m║  High-Win-Rate Day Trading Strategy for BTC, ETH, and SOL                  ║\033[0m
+\033[38;2;102;126;234m║  Timeframes: 30m and 1H                                                    ║\033[0m
+\033[38;2;102;126;234m║  Features: Multi-indicator analysis, backtesting, and live signals         ║\033[0m
+\033[38;2;102;126;234m╚══════════════════════════════════════════════════════════════════════════════╝\033[0m
     """)
 
 def print_menu():
     """Print main menu options"""
-    print("\n📊 MAIN MENU:")
-    print("1. 📈 Analyze current market conditions")
-    print("2. 🔍 Get trading signals")
-    print("3. 📊 Run backtest")
-    print("4. 📈 Portfolio analysis")
-    print("5. 🔄 Live market monitoring")
-    print("6. 📋 View strategy details")
-    print("7. ⚙️  Configuration")
-    print("0. 🚪 Exit")
-    print("-" * 60)
+    print("\n\033[38;2;102;126;234m📊 MAIN MENU\033[0m")
+    print("\033[38;2;102;126;234m" + "=" * 60 + "\033[0m")
+    print("\033[38;2;16;185;129m1. 📈 Analyze current market conditions\033[0m")
+    print("\033[38;2;16;185;129m2. 🔍 Get trading signals\033[0m")
+    print("\033[38;2;16;185;129m3. 📊 Run backtest\033[0m")
+    print("\033[38;2;16;185;129m4. 📈 Portfolio analysis\033[0m")
+    print("\033[38;2;16;185;129m5. 🔄 Live market monitoring\033[0m")
+    print("\033[38;2;16;185;129m6. 📋 View strategy details\033[0m")
+    print("\033[38;2;16;185;129m7. ⚙️  Configuration\033[0m")
+    print("\033[38;2;16;185;129m8. 🌐 Web Dashboard\033[0m")
+    print("\033[38;2;239;68;68m0. 🚪 Exit\033[0m")
+    print("\033[38;2;102;126;234m" + "-" * 60 + "\033[0m")
 
 def analyze_market():
     """Analyze current market conditions for all symbols"""
@@ -476,20 +478,20 @@ def view_strategy_details():
 
 def configuration():
     """Configuration menu"""
-    print("\n⚙️  CONFIGURATION:")
-    print("=" * 60)
+    print("\n\033[38;2;102;126;234m⚙️  CONFIGURATION\033[0m")
+    print("\033[38;2;102;126;234m" + "=" * 60 + "\033[0m")
     
-    print("1. 📊 View current configuration")
-    print("2. 🔑 Set API keys")
-    print("3. ⚙️  Modify strategy parameters")
-    print("4. 📈 Adjust risk management")
-    print("0. 🔙 Back to main menu")
+    print("\033[38;2;16;185;129m1. 📊 View current configuration\033[0m")
+    print("\033[38;2;16;185;129m2. 🔑 Set API keys\033[0m")
+    print("\033[38;2;16;185;129m3. ⚙️  Modify strategy parameters\033[0m")
+    print("\033[38;2;16;185;129m4. 📈 Adjust risk management\033[0m")
+    print("\033[38;2;239;68;68m0. 🔙 Back to main menu\033[0m")
     
-    choice = input("\nEnter your choice: ").strip()
+    choice = input("\n\033[38;2;102;126;234mEnter your choice: \033[0m").strip()
     
     if choice == '1':
-        print("\n📊 CURRENT CONFIGURATION:")
-        print("-" * 40)
+        print("\n\033[38;2;16;185;129m📊 CURRENT CONFIGURATION:\033[0m")
+        print("\033[38;2;102;126;234m" + "-" * 40 + "\033[0m")
         print(f"Symbols: {', '.join(SYMBOLS)}")
         print(f"Timeframes: {', '.join(TIMEFRAMES)}")
         print(f"Initial Capital: ${config.INITIAL_CAPITAL:,.2f}")
@@ -501,21 +503,21 @@ def configuration():
         print(f"Max Weekly Loss: {config.MAX_WEEKLY_LOSS * 100}%")
         
         if config.BINANCE_API_KEY:
-            print("API Keys: ✅ Configured")
+            print("\033[38;2;16;185;129mAPI Keys: ✅ Configured\033[0m")
         else:
-            print("API Keys: ❌ Not configured")
+            print("\033[38;2;239;68;68mAPI Keys: ❌ Not configured\033[0m")
     
     elif choice == '2':
-        print("\n🔑 API KEY CONFIGURATION:")
-        print("-" * 40)
+        print("\n\033[38;2;16;185;129m🔑 API KEY CONFIGURATION:\033[0m")
+        print("\033[38;2;102;126;234m" + "-" * 40 + "\033[0m")
         print("To set API keys, create a .env file in the project directory with:")
         print("BINANCE_API_KEY=your_api_key_here")
         print("BINANCE_SECRET_KEY=your_secret_key_here")
         print("\n⚠️  Note: API keys are optional for data fetching but required for live trading")
     
     elif choice == '3':
-        print("\n⚙️  STRATEGY PARAMETERS:")
-        print("-" * 40)
+        print("\n\033[38;2;16;185;129m⚙️  STRATEGY PARAMETERS:\033[0m")
+        print("\033[38;2;102;126;234m" + "-" * 40 + "\033[0m")
         print("Strategy parameters can be modified in config.py")
         print("Current key parameters:")
         print(f"• RSI Period: {config.RSI_PERIOD}")
@@ -526,8 +528,8 @@ def configuration():
         print(f"• EMA Slow: {config.EMA_SLOW}")
     
     elif choice == '4':
-        print("\n📈 RISK MANAGEMENT:")
-        print("-" * 40)
+        print("\n\033[38;2;16;185;129m📈 RISK MANAGEMENT:\033[0m")
+        print("\033[38;2;102;126;234m" + "-" * 40 + "\033[0m")
         print("Risk management parameters can be modified in config.py")
         print("Current settings:")
         print(f"• Position Size: {config.POSITION_SIZE * 100}% of capital")
@@ -535,6 +537,37 @@ def configuration():
         print(f"• Take Profit: {config.TAKE_PROFIT_PERCENT * 100}%")
         print(f"• Max Daily Loss: {config.MAX_DAILY_LOSS * 100}%")
         print(f"• Max Weekly Loss: {config.MAX_WEEKLY_LOSS * 100}%")
+
+def launch_web_dashboard():
+    """Launch the web dashboard"""
+    print("\n\033[38;2;16;185;129m🌐 WEB DASHBOARD\033[0m")
+    print("\033[38;2;102;126;234m" + "=" * 60 + "\033[0m")
+    
+    print("🚀 Launching modern web dashboard...")
+    print("📱 The dashboard will open in your default browser")
+    print("🔄 Real-time updates every minute")
+    print("🎨 Beautiful minimal design with interactive charts")
+    print("\n⏳ Starting dashboard server...")
+    
+    try:
+        import subprocess
+        import sys
+        
+        # Launch dashboard in background
+        if sys.platform.startswith('win'):
+            subprocess.Popen([sys.executable, 'dashboard.py'], 
+                           creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:
+            subprocess.Popen([sys.executable, 'dashboard.py'])
+        
+        print("\n✅ Dashboard launched successfully!")
+        print("🌐 Open your browser and go to: http://127.0.0.1:8050")
+        print("⏹️  To stop the dashboard, close the browser tab and press Ctrl+C in the dashboard terminal")
+        print("\n💡 You can continue using the terminal interface while the dashboard runs")
+        
+    except Exception as e:
+        print(f"\n❌ Error launching dashboard: {e}")
+        print("💡 You can manually run: python dashboard.py")
 
 def main():
     """Main application loop"""
@@ -571,8 +604,11 @@ def main():
             elif choice == '7':
                 configuration()
             
+            elif choice == '8':
+                launch_web_dashboard()
+            
             else:
-                print("❌ Invalid choice. Please enter a number between 0 and 7.")
+                print("❌ Invalid choice. Please enter a number between 0 and 8.")
             
             input("\nPress Enter to continue...")
             

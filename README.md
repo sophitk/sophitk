@@ -12,6 +12,10 @@ A high-win-rate day trading system for BTC, ETH, and SOL with comprehensive tech
 - **Risk Management**: Dynamic stop-loss, take-profit, and position sizing
 - **Portfolio Analysis**: Multi-asset portfolio optimization
 - **Live Monitoring**: Real-time market monitoring and signal alerts
+- **Beautiful UX/UI**: Modern minimal design with web dashboard and enhanced terminal interface
+- **Interactive Charts**: Real-time price charts with Plotly and Dash
+- **Responsive Design**: Mobile-optimized web interface
+- **Color-Coded Terminal**: Beautiful colored terminal output with progress bars and animations
 
 ## 🎯 Supported Cryptocurrencies
 
@@ -93,6 +97,12 @@ BINANCE_SECRET_KEY=your_secret_key_here
 python main.py
 ```
 
+#### Web Dashboard
+```bash
+python dashboard.py
+```
+Then open your browser to: http://127.0.0.1:8050
+
 #### Command Line Mode
 ```bash
 # Analyze BTC on 1h timeframe
@@ -116,6 +126,7 @@ python main.py --symbol ETH/USDT --timeframe 30m --action backtest
 5. **🔄 Live Market Monitoring** - Real-time market monitoring
 6. **📋 View Strategy Details** - Strategy explanation and parameters
 7. **⚙️ Configuration** - System configuration and settings
+8. **🌐 Web Dashboard** - Launch beautiful web interface
 
 ### Market Analysis
 
@@ -146,6 +157,17 @@ Comprehensive backtesting includes:
 - **Trade Analysis**: Individual trade performance
 - **Equity Curve**: Portfolio value over time
 - **Visual Charts**: Price charts with indicators and trades
+
+### Web Dashboard
+
+Modern web interface features:
+
+- **Real-Time Charts**: Interactive candlestick charts with volume
+- **Live Updates**: Automatic data refresh every minute
+- **Responsive Design**: Mobile-optimized interface
+- **Beautiful UI**: Minimal design with smooth animations
+- **Performance Metrics**: Visual representation of trading performance
+- **Trading Signals**: Real-time signal display with confidence levels
 
 ## 📈 Expected Performance
 
