@@ -263,7 +263,7 @@ def test_dependencies():
     
     for package in required_packages:
         try:
-            __import__(package)
+            __import__('sklearn' if package == 'scikit-learn' else package)
             print(f"✅ {package} available")
         except ImportError:
             print(f"❌ {package} missing")
