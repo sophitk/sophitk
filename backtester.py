@@ -123,17 +123,33 @@ class CryptoBacktester:
         capital = self.initial_capital
         current_position = None
         
-        for i in range(1, len(df)):
-            current_bar = df.iloc[i]
-            previous_bar = df.iloc[i-1]
-            
+        # Optimize iteration by converting Series to numpy arrays for faster access
+        entry_signals_np = entry_signals.values
+        exit_signals_np = exit_signals.values
+
+        # Iterate using itertuples for much better performance than iloc
+        # We start from index 1 (second row) as in the original loop
+
+        for i, current_bar in enumerate(df.iloc[1:].itertuples(index=True), start=1):
             # Check for exit signals if we have a position
             if current_position:
-                exit_signal = exit_signals.iloc[i]
+                exit_signal = exit_signals_np[i]
                 
-                if exit_signal != 0 or self._check_stop_loss(current_position, current_bar):
+                # We need to access attributes using dot notation with itertuples
+                # Or create a wrapper/adapter if needed.
+                # _check_stop_loss expects dict-like access for 'low'/'high',
+                # but itertuples gives an object where we access fields as attributes.
+                # However, _check_stop_loss and others use bar['low'].
+                # To avoid rewriting all helper methods, we can pass the object
+                # but we need to update helper methods to handle both or change how we call them.
+                # Since we want to minimize changes, let's adapt the call site or helper methods.
+
+                # Let's modify the helper methods to accept the object from itertuples
+                # which has attributes like .close, .high, .low
+
+                if exit_signal != 0 or self._check_stop_loss_optimized(current_position, current_bar):
                     # Close position
-                    trade_result = self._close_position(current_position, current_bar, i)
+                    trade_result = self._close_position_optimized(current_position, current_bar, i)
                     results['trades'].append(trade_result)
                     
                     # Update capital
@@ -146,24 +162,24 @@ class CryptoBacktester:
             
             # Check for entry signals if we don't have a position
             if not current_position:
-                entry_signal = entry_signals.iloc[i]
+                entry_signal = entry_signals_np[i]
                 
                 if entry_signal != 0:
                     # Open new position
-                    current_position = self._open_position(
+                    current_position = self._open_position_optimized(
                         entry_signal, current_bar, i, capital, symbol, timeframe
                     )
                     results['positions'].append(current_position)
             
             # Update equity curve
             if current_position:
-                unrealized_pnl = self._calculate_unrealized_pnl(current_position, current_bar)
+                unrealized_pnl = self._calculate_unrealized_pnl_optimized(current_position, current_bar)
                 current_equity = capital + unrealized_pnl
             else:
                 current_equity = capital
             
             results['equity_curve'].append({
-                'timestamp': current_bar.name,
+                'timestamp': current_bar.Index, # itertuples has Index as the first field
                 'equity': current_equity,
                 'capital': capital,
                 'unrealized_pnl': unrealized_pnl if current_position else 0
@@ -180,15 +196,34 @@ class CryptoBacktester:
     def _open_position(self, signal: int, bar: pd.Series, index: int, 
                       capital: float, symbol: str, timeframe: str) -> Dict:
         """Open a new trading position"""
+        # Kept for backward compatibility
+        return self._open_position_optimized(signal, bar, index, capital, symbol, timeframe)
+
+    def _open_position_optimized(self, signal: int, bar, index: int,
+                      capital: float, symbol: str, timeframe: str) -> Dict:
+        """Open a new trading position (optimized)"""
         direction = 'long' if signal == 1 else 'short'
-        entry_price = bar['close']
+
+        # Handle both dict-like (Series) and attribute access (namedtuple)
+        if hasattr(bar, 'close'):
+             entry_price = bar.close
+        else:
+             entry_price = bar['close']
         
         # Calculate position size (10% of capital)
         position_value = capital * 0.1
         quantity = position_value / entry_price
         
         # Calculate stop loss and take profit
-        atr = bar['atr'] if not pd.isna(bar['atr']) else entry_price * 0.02
+        if hasattr(bar, 'atr'):
+            atr = bar.atr
+        elif 'atr' in bar:
+            atr = bar['atr']
+        else:
+            atr = 0
+
+        if pd.isna(atr):
+            atr = entry_price * 0.02
         
         if direction == 'long':
             stop_loss = entry_price - (atr * 2)
@@ -197,12 +232,17 @@ class CryptoBacktester:
             stop_loss = entry_price + (atr * 2)
             take_profit = entry_price - (atr * 4)
         
+        if hasattr(bar, 'Index'):
+            entry_time = bar.Index
+        else:
+            entry_time = bar.name
+
         position = {
             'id': len(self.positions) + 1,
             'symbol': symbol,
             'timeframe': timeframe,
             'direction': direction,
-            'entry_time': bar.name,
+            'entry_time': entry_time,
             'entry_price': entry_price,
             'quantity': quantity,
             'stop_loss': stop_loss,
@@ -215,8 +255,21 @@ class CryptoBacktester:
     
     def _close_position(self, position: Dict, bar: pd.Series, index: int) -> Dict:
         """Close a trading position"""
-        exit_price = bar['close']
-        exit_time = bar.name
+        # Kept for backward compatibility
+        return self._close_position_optimized(position, bar, index)
+
+    def _close_position_optimized(self, position: Dict, bar, index: int) -> Dict:
+        """Close a trading position (optimized)"""
+        # Handle both dict-like (Series) and attribute access (namedtuple)
+        if hasattr(bar, 'close'):
+             exit_price = bar.close
+        else:
+             exit_price = bar['close']
+
+        if hasattr(bar, 'Index'):
+            exit_time = bar.Index
+        else:
+            exit_time = bar.name
         
         # Calculate P&L
         if position['direction'] == 'long':
@@ -264,14 +317,39 @@ class CryptoBacktester:
     
     def _check_stop_loss(self, position: Dict, bar: pd.Series) -> bool:
         """Check if stop loss has been hit"""
-        if position['direction'] == 'long':
-            return bar['low'] <= position['stop_loss']
+        # Kept for backward compatibility
+        return self._check_stop_loss_optimized(position, bar)
+
+    def _check_stop_loss_optimized(self, position: Dict, bar) -> bool:
+        """Check if stop loss has been hit (optimized)"""
+        # Handle both dict-like (Series) and attribute access (namedtuple)
+        if hasattr(bar, 'low'):
+             low = bar.low
         else:
-            return bar['high'] >= position['stop_loss']
+             low = bar['low']
+
+        if hasattr(bar, 'high'):
+             high = bar.high
+        else:
+             high = bar['high']
+
+        if position['direction'] == 'long':
+            return low <= position['stop_loss']
+        else:
+            return high >= position['stop_loss']
     
     def _calculate_unrealized_pnl(self, position: Dict, bar: pd.Series) -> float:
         """Calculate unrealized P&L for open position"""
-        current_price = bar['close']
+        # Kept for backward compatibility
+        return self._calculate_unrealized_pnl_optimized(position, bar)
+
+    def _calculate_unrealized_pnl_optimized(self, position: Dict, bar) -> float:
+        """Calculate unrealized P&L for open position (optimized)"""
+        # Handle both dict-like (Series) and attribute access (namedtuple)
+        if hasattr(bar, 'close'):
+             current_price = bar.close
+        else:
+             current_price = bar['close']
         
         if position['direction'] == 'long':
             return (current_price - position['entry_price']) * position['quantity']
