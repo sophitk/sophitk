@@ -123,13 +123,22 @@ class CryptoBacktester:
         capital = self.initial_capital
         current_position = None
         
-        for i in range(1, len(df)):
-            current_bar = df.iloc[i]
-            previous_bar = df.iloc[i-1]
-            
+        # Pre-convert signals to numpy arrays for faster access
+        entry_signal_values = entry_signals.values
+        exit_signal_values = exit_signals.values
+
+        # Use itertuples for faster iteration (yields namedtuples)
+        # We start enumeration from 0 but access signals with index i
+        # The loop iterates over all rows, but we need to match original logic which started at index 1
+        # Original: range(1, len(df)) -> skips first row
+
+        rows = df.itertuples()
+        next(rows) # Skip the first row to match original logic (started at i=1)
+
+        for i, current_bar in enumerate(rows, 1):
             # Check for exit signals if we have a position
             if current_position:
-                exit_signal = exit_signals.iloc[i]
+                exit_signal = exit_signal_values[i]
                 
                 if exit_signal != 0 or self._check_stop_loss(current_position, current_bar):
                     # Close position
@@ -146,7 +155,7 @@ class CryptoBacktester:
             
             # Check for entry signals if we don't have a position
             if not current_position:
-                entry_signal = entry_signals.iloc[i]
+                entry_signal = entry_signal_values[i]
                 
                 if entry_signal != 0:
                     # Open new position
@@ -163,7 +172,7 @@ class CryptoBacktester:
                 current_equity = capital
             
             results['equity_curve'].append({
-                'timestamp': current_bar.name,
+                'timestamp': current_bar.Index,
                 'equity': current_equity,
                 'capital': capital,
                 'unrealized_pnl': unrealized_pnl if current_position else 0
@@ -181,14 +190,14 @@ class CryptoBacktester:
                       capital: float, symbol: str, timeframe: str) -> Dict:
         """Open a new trading position"""
         direction = 'long' if signal == 1 else 'short'
-        entry_price = bar['close']
+        entry_price = bar.close
         
         # Calculate position size (10% of capital)
         position_value = capital * 0.1
         quantity = position_value / entry_price
         
         # Calculate stop loss and take profit
-        atr = bar['atr'] if not pd.isna(bar['atr']) else entry_price * 0.02
+        atr = bar.atr if not pd.isna(bar.atr) else entry_price * 0.02
         
         if direction == 'long':
             stop_loss = entry_price - (atr * 2)
@@ -202,7 +211,7 @@ class CryptoBacktester:
             'symbol': symbol,
             'timeframe': timeframe,
             'direction': direction,
-            'entry_time': bar.name,
+            'entry_time': bar.Index,
             'entry_price': entry_price,
             'quantity': quantity,
             'stop_loss': stop_loss,
@@ -215,8 +224,8 @@ class CryptoBacktester:
     
     def _close_position(self, position: Dict, bar: pd.Series, index: int) -> Dict:
         """Close a trading position"""
-        exit_price = bar['close']
-        exit_time = bar.name
+        exit_price = bar.close
+        exit_time = bar.Index
         
         # Calculate P&L
         if position['direction'] == 'long':
@@ -265,13 +274,13 @@ class CryptoBacktester:
     def _check_stop_loss(self, position: Dict, bar: pd.Series) -> bool:
         """Check if stop loss has been hit"""
         if position['direction'] == 'long':
-            return bar['low'] <= position['stop_loss']
+            return bar.low <= position['stop_loss']
         else:
-            return bar['high'] >= position['stop_loss']
+            return bar.high >= position['stop_loss']
     
     def _calculate_unrealized_pnl(self, position: Dict, bar: pd.Series) -> float:
         """Calculate unrealized P&L for open position"""
-        current_price = bar['close']
+        current_price = bar.close
         
         if position['direction'] == 'long':
             return (current_price - position['entry_price']) * position['quantity']
