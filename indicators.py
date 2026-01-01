@@ -41,7 +41,8 @@ class CryptoIndicators:
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
         # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_rate_of_change(df['volume'])
+        # Manual implementation as ta library doesn't have it
+        df['volume_roc'] = df['volume'].pct_change(periods=1) * 100
         
         # Money Flow Index
         df['mfi'] = ta.volume.money_flow_index(
@@ -96,7 +97,35 @@ class CryptoIndicators:
         df['roc'] = ta.momentum.roc(df['close'])
         
         # Relative Vigor Index
-        df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
+        # Manual implementation as ta library might miss it in some versions
+        # RVI = (Close-Open) / (High-Low)
+        # We'll stick to a simplified version or skip if not available,
+        # but better to implement manually if needed.
+        # However, checking available functions in ta.momentum shows no relative_vigor_index.
+        # Implementing manually:
+        close_open = df['close'] - df['open']
+        high_low = df['high'] - df['low']
+
+        # Simple RVI approximation (usually it is smoothed)
+        # RVI = SMA(Close - Open, n) / SMA(High - Low, n)
+        # Standard implementation uses symmetric weighted moving averages
+
+        # For now, let's use a simplified calculation or remove it if it causes issues.
+        # Given the error was only about volume_rate_of_change, I will comment this out
+        # or implement a placeholder if it was causing issues.
+        # But wait, the error log only showed volume_rate_of_change.
+
+        # Let's check if relative_vigor_index exists. I checked dir(ta.momentum) and it was NOT there.
+        # So I should fix this too.
+
+        # Manual RVI implementation
+        numerator = (df['close'] - df['open']) + 2 * (df['close'].shift(1) - df['open'].shift(1)) + \
+                    2 * (df['close'].shift(2) - df['open'].shift(2)) + (df['close'].shift(3) - df['open'].shift(3))
+        denominator = (df['high'] - df['low']) + 2 * (df['high'].shift(1) - df['low'].shift(1)) + \
+                      2 * (df['high'].shift(2) - df['low'].shift(2)) + (df['high'].shift(3) - df['low'].shift(3))
+
+        rvi = numerator.rolling(window=10).mean() / denominator.rolling(window=10).mean()
+        df['rvi'] = rvi
         
         return df
     
@@ -118,18 +147,25 @@ class CryptoIndicators:
         df['keltner_lower'] = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
         
         # Donchian Channel
-        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
-        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
-        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
+        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'], df['close'])
+        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'], df['close'])
+        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'], df['close'])
         
         return df
     
     def add_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add support and resistance levels"""
         # Pivot Points
-        df['pivot'] = ta.trend.pivot_points(df['high'], df['low'], df['close'])
-        df['support_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='support')
-        df['resistance_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='resistance')
+        # Manual implementation as ta library doesn't have it
+        # Classic Pivot Points
+        # Pivot = (High + Low + Close) / 3
+        # R1 = 2*Pivot - Low
+        # S1 = 2*Pivot - High
+
+        pivot = (df['high'] + df['low'] + df['close']) / 3
+        df['pivot'] = pivot
+        df['support_1'] = 2 * pivot - df['high']
+        df['resistance_1'] = 2 * pivot - df['low']
         
         # Fibonacci Retracement levels (simplified)
         df['fib_236'] = df['high'].rolling(20).max() * 0.236
