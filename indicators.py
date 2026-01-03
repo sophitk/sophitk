@@ -40,8 +40,8 @@ class CryptoIndicators:
         # On Balance Volume (OBV)
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
-        # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_rate_of_change(df['volume'])
+        # Volume Rate of Change (using ROC from momentum on volume)
+        df['volume_roc'] = ta.momentum.roc(df['volume'])
         
         # Money Flow Index
         df['mfi'] = ta.volume.money_flow_index(
@@ -96,7 +96,7 @@ class CryptoIndicators:
         df['roc'] = ta.momentum.roc(df['close'])
         
         # Relative Vigor Index
-        df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
+        df['rvi'] = self._calculate_rvi(df['open'], df['high'], df['low'], df['close'])
         
         return df
     
@@ -118,18 +118,19 @@ class CryptoIndicators:
         df['keltner_lower'] = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
         
         # Donchian Channel
-        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
-        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
-        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
+        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'], df['close'])
+        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'], df['close'])
+        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'], df['close'])
         
         return df
     
     def add_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add support and resistance levels"""
         # Pivot Points
-        df['pivot'] = ta.trend.pivot_points(df['high'], df['low'], df['close'])
-        df['support_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='support')
-        df['resistance_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='resistance')
+        pivot, s1, r1 = self._calculate_pivot_points(df['high'], df['low'], df['close'])
+        df['pivot'] = pivot
+        df['support_1'] = s1
+        df['resistance_1'] = r1
         
         # Fibonacci Retracement levels (simplified)
         df['fib_236'] = df['high'].rolling(20).max() * 0.236
@@ -139,6 +140,24 @@ class CryptoIndicators:
         
         return df
     
+    def _calculate_pivot_points(self, high, low, close):
+        """Calculate pivot points and support/resistance levels"""
+        pivot = (high + low + close) / 3
+        r1 = (2 * pivot) - low
+        s1 = (2 * pivot) - high
+        return pivot, s1, r1
+
+    def _calculate_rvi(self, open, high, low, close, window=10):
+        """Calculate Relative Vigor Index"""
+        close_open = close - open
+        high_low = high - low
+
+        numerator = (close_open + 2 * close_open.shift(1) + 2 * close_open.shift(2) + close_open.shift(3)) / 6
+        denominator = (high_low + 2 * high_low.shift(1) + 2 * high_low.shift(2) + high_low.shift(3)) / 6
+
+        rvi = numerator.rolling(window).mean() / denominator.rolling(window).mean()
+        return rvi
+
     def generate_signals(self, df: pd.DataFrame) -> Dict[str, pd.Series]:
         """Generate trading signals based on multiple indicators"""
         signals = {}
