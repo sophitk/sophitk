@@ -110,8 +110,16 @@ class CryptoBacktester:
     def _execute_backtest(self, analysis: Dict, symbol: str, timeframe: str) -> Dict:
         """Execute the backtest based on strategy analysis"""
         df = analysis['data']
-        entry_signals = analysis['entry_signals']
-        exit_signals = analysis['exit_signals']
+        # Convert necessary columns to numpy arrays for faster access
+        entry_signals = analysis['entry_signals'].values
+        exit_signals = analysis['exit_signals'].values
+
+        # Pre-fetch numpy arrays for columns used in loop
+        closes = df['close'].values
+        lows = df['low'].values
+        highs = df['high'].values
+        atrs = df['atr'].values if 'atr' in df.columns else np.zeros(len(df))
+        timestamps = df.index
         
         results = {
             'trades': [],
@@ -123,18 +131,29 @@ class CryptoBacktester:
         capital = self.initial_capital
         current_position = None
         
+        # Helper variables to avoid repeated method lookups
+        trades_append = results['trades'].append
+        positions_append = results['positions'].append
+        equity_curve_append = results['equity_curve'].append
+
         for i in range(1, len(df)):
-            current_bar = df.iloc[i]
-            previous_bar = df.iloc[i-1]
-            
             # Check for exit signals if we have a position
             if current_position:
-                exit_signal = exit_signals.iloc[i]
+                exit_signal = exit_signals[i]
+
+                # Check stop loss
+                sl_hit = False
+                if current_position['direction'] == 'long':
+                    if lows[i] <= current_position['stop_loss']:
+                        sl_hit = True
+                else:
+                    if highs[i] >= current_position['stop_loss']:
+                        sl_hit = True
                 
-                if exit_signal != 0 or self._check_stop_loss(current_position, current_bar):
+                if exit_signal != 0 or sl_hit:
                     # Close position
-                    trade_result = self._close_position(current_position, current_bar, i)
-                    results['trades'].append(trade_result)
+                    trade_result = self._close_position_fast(current_position, closes[i], timestamps[i])
+                    trades_append(trade_result)
                     
                     # Update capital
                     if trade_result['pnl'] > 0:
@@ -146,36 +165,129 @@ class CryptoBacktester:
             
             # Check for entry signals if we don't have a position
             if not current_position:
-                entry_signal = entry_signals.iloc[i]
+                entry_signal = entry_signals[i]
                 
                 if entry_signal != 0:
                     # Open new position
-                    current_position = self._open_position(
-                        entry_signal, current_bar, i, capital, symbol, timeframe
+                    current_position = self._open_position_fast(
+                        entry_signal, closes[i], atrs[i], timestamps[i], i, capital, symbol, timeframe
                     )
-                    results['positions'].append(current_position)
+                    positions_append(current_position)
             
             # Update equity curve
+            unrealized_pnl = 0
             if current_position:
-                unrealized_pnl = self._calculate_unrealized_pnl(current_position, current_bar)
+                if current_position['direction'] == 'long':
+                    unrealized_pnl = (closes[i] - current_position['entry_price']) * current_position['quantity']
+                else:
+                    unrealized_pnl = (current_position['entry_price'] - closes[i]) * current_position['quantity']
                 current_equity = capital + unrealized_pnl
             else:
                 current_equity = capital
             
-            results['equity_curve'].append({
-                'timestamp': current_bar.name,
+            equity_curve_append({
+                'timestamp': timestamps[i],
                 'equity': current_equity,
                 'capital': capital,
-                'unrealized_pnl': unrealized_pnl if current_position else 0
+                'unrealized_pnl': unrealized_pnl
             })
         
         # Close any remaining position at the end
         if current_position:
-            last_bar = df.iloc[-1]
-            trade_result = self._close_position(current_position, last_bar, len(df) - 1)
-            results['trades'].append(trade_result)
+            last_idx = len(df) - 1
+            trade_result = self._close_position_fast(current_position, closes[last_idx], timestamps[last_idx])
+            trades_append(trade_result)
         
         return results
+
+    def _open_position_fast(self, signal: int, close_price: float, atr: float, timestamp, index: int,
+                           capital: float, symbol: str, timeframe: str) -> Dict:
+        """Open a new trading position (optimized version)"""
+        direction = 'long' if signal == 1 else 'short'
+        entry_price = close_price
+
+        # Calculate position size (10% of capital)
+        position_value = capital * 0.1
+        quantity = position_value / entry_price
+
+        # Calculate stop loss and take profit
+        atr_val = atr if not np.isnan(atr) else entry_price * 0.02
+
+        if direction == 'long':
+            stop_loss = entry_price - (atr_val * 2)
+            take_profit = entry_price + (atr_val * 4)  # 1:2 risk-reward
+        else:
+            stop_loss = entry_price + (atr_val * 2)
+            take_profit = entry_price - (atr_val * 4)
+
+        position = {
+            'id': len(self.positions) + 1,
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'direction': direction,
+            'entry_time': timestamp,
+            'entry_price': entry_price,
+            'quantity': quantity,
+            'stop_loss': stop_loss,
+            'take_profit': take_profit,
+            'entry_index': index,
+            'status': 'open'
+        }
+
+        return position
+
+    def _close_position_fast(self, position: Dict, close_price: float, timestamp) -> Dict:
+        """Close a trading position (optimized version)"""
+        exit_price = close_price
+        exit_time = timestamp
+
+        # Calculate P&L
+        if position['direction'] == 'long':
+            pnl = (exit_price - position['entry_price']) * position['quantity']
+        else:
+            pnl = (position['entry_price'] - exit_price) * position['quantity']
+
+        # Calculate trade metrics
+        entry_value = position['entry_price'] * position['quantity']
+        exit_value = exit_price * position['quantity']
+
+        # Determine exit reason
+        if position['direction'] == 'long':
+            if exit_price <= position['stop_loss']:
+                exit_reason = 'stop_loss'
+            elif exit_price >= position['take_profit']:
+                exit_reason = 'take_profit'
+            else:
+                exit_reason = 'signal'
+        else: # short
+            if exit_price >= position['stop_loss']:
+                exit_reason = 'stop_loss'
+            elif exit_price <= position['take_profit']:
+                exit_reason = 'take_profit'
+            else:
+                exit_reason = 'signal'
+
+        trade_result = {
+            'position_id': position['id'],
+            'symbol': position['symbol'],
+            'timeframe': position['timeframe'],
+            'direction': position['direction'],
+            'entry_time': position['entry_time'],
+            'exit_time': exit_time,
+            'entry_price': position['entry_price'],
+            'exit_price': exit_price,
+            'quantity': position['quantity'],
+            'entry_value': entry_value,
+            'exit_value': exit_value,
+            'pnl': pnl,
+            'pnl_pct': (pnl / entry_value) * 100,
+            'exit_reason': exit_reason,
+            'duration': (exit_time - position['entry_time']).total_seconds() / 3600,  # hours
+            'stop_loss': position['stop_loss'],
+            'take_profit': position['take_profit']
+        }
+
+        return trade_result
     
     def _open_position(self, signal: int, bar: pd.Series, index: int, 
                       capital: float, symbol: str, timeframe: str) -> Dict:
