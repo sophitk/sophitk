@@ -109,9 +109,23 @@ class CryptoBacktester:
     
     def _execute_backtest(self, analysis: Dict, symbol: str, timeframe: str) -> Dict:
         """Execute the backtest based on strategy analysis"""
+        # Optimize execution by using numpy arrays instead of pandas iloc iterations
         df = analysis['data']
-        entry_signals = analysis['entry_signals']
-        exit_signals = analysis['exit_signals']
+
+        # Pre-convert columns to numpy arrays for faster access
+        timestamps = df.index.to_numpy()
+        closes = df['close'].to_numpy()
+        highs = df['high'].to_numpy()
+        lows = df['low'].to_numpy()
+        # Handle atr column which might be NaN or missing
+        if 'atr' in df.columns:
+            atrs = df['atr'].to_numpy()
+        else:
+            # Create default ATR array based on 2% of close price
+            atrs = closes * 0.02
+
+        entry_signals = analysis['entry_signals'].to_numpy()
+        exit_signals = analysis['exit_signals'].to_numpy()
         
         results = {
             'trades': [],
@@ -123,17 +137,36 @@ class CryptoBacktester:
         capital = self.initial_capital
         current_position = None
         
-        for i in range(1, len(df)):
-            current_bar = df.iloc[i]
-            previous_bar = df.iloc[i-1]
+        # Pre-calculate array length to avoid function calls
+        n_candles = len(closes)
+
+        # Lists for bulk appending (faster than repetitive dict creation/list append inside loop if optimized further,
+        # but here we keep the logic simple)
+        equity_curve_data = []
+
+        for i in range(1, n_candles):
+            # Use direct array access
+            current_close = closes[i]
+            current_time = timestamps[i]
             
             # Check for exit signals if we have a position
             if current_position:
-                exit_signal = exit_signals.iloc[i]
+                exit_signal = exit_signals[i]
                 
-                if exit_signal != 0 or self._check_stop_loss(current_position, current_bar):
+                # Check stop loss
+                hit_stop_loss = False
+                if current_position['direction'] == 'long':
+                    if lows[i] <= current_position['stop_loss']:
+                        hit_stop_loss = True
+                else:
+                    if highs[i] >= current_position['stop_loss']:
+                        hit_stop_loss = True
+
+                if exit_signal != 0 or hit_stop_loss:
                     # Close position
-                    trade_result = self._close_position(current_position, current_bar, i)
+                    trade_result = self._close_position(
+                        current_position, current_close, current_time
+                    )
                     results['trades'].append(trade_result)
                     
                     # Update capital
@@ -146,64 +179,78 @@ class CryptoBacktester:
             
             # Check for entry signals if we don't have a position
             if not current_position:
-                entry_signal = entry_signals.iloc[i]
+                entry_signal = entry_signals[i]
                 
                 if entry_signal != 0:
                     # Open new position
+                    current_atr = atrs[i]
+                    if np.isnan(current_atr):
+                        current_atr = current_close * 0.02
+
                     current_position = self._open_position(
-                        entry_signal, current_bar, i, capital, symbol, timeframe
+                        entry_signal, current_close, current_time, i, capital, symbol, timeframe, current_atr
                     )
                     results['positions'].append(current_position)
             
             # Update equity curve
+            unrealized_pnl = 0
             if current_position:
-                unrealized_pnl = self._calculate_unrealized_pnl(current_position, current_bar)
+                if current_position['direction'] == 'long':
+                    unrealized_pnl = (current_close - current_position['entry_price']) * current_position['quantity']
+                else:
+                    unrealized_pnl = (current_position['entry_price'] - current_close) * current_position['quantity']
                 current_equity = capital + unrealized_pnl
             else:
                 current_equity = capital
             
-            results['equity_curve'].append({
-                'timestamp': current_bar.name,
+            equity_curve_data.append({
+                'timestamp': current_time,
                 'equity': current_equity,
                 'capital': capital,
-                'unrealized_pnl': unrealized_pnl if current_position else 0
+                'unrealized_pnl': unrealized_pnl
             })
+
+        results['equity_curve'] = equity_curve_data
         
         # Close any remaining position at the end
         if current_position:
-            last_bar = df.iloc[-1]
-            trade_result = self._close_position(current_position, last_bar, len(df) - 1)
+            last_close = closes[-1]
+            last_time = timestamps[-1]
+            trade_result = self._close_position(current_position, last_close, last_time)
             results['trades'].append(trade_result)
         
         return results
-    
-    def _open_position(self, signal: int, bar: pd.Series, index: int, 
-                      capital: float, symbol: str, timeframe: str) -> Dict:
-        """Open a new trading position"""
+
+    def _open_position(self, signal: int, price: float, timestamp, index: int,
+                      capital: float, symbol: str, timeframe: str, atr: float = None) -> Dict:
+        """Open a new trading position (accepts primitive values or acts as wrapper if needed,
+           but simplified here for optimization)"""
+        # Note: Original signature accepted 'bar: pd.Series'. This changes signature to primitives.
+
         direction = 'long' if signal == 1 else 'short'
-        entry_price = bar['close']
         
         # Calculate position size (10% of capital)
         position_value = capital * 0.1
-        quantity = position_value / entry_price
+        quantity = position_value / price
         
-        # Calculate stop loss and take profit
-        atr = bar['atr'] if not pd.isna(bar['atr']) else entry_price * 0.02
+        # ATR logic
+        if atr is None or pd.isna(atr):
+            atr = price * 0.02
         
         if direction == 'long':
-            stop_loss = entry_price - (atr * 2)
-            take_profit = entry_price + (atr * 4)  # 1:2 risk-reward
+            stop_loss = price - (atr * 2)
+            take_profit = price + (atr * 4)  # 1:2 risk-reward
         else:
-            stop_loss = entry_price + (atr * 2)
-            take_profit = entry_price - (atr * 4)
+            stop_loss = price + (atr * 2)
+            take_profit = price - (atr * 4)
         
         position = {
             'id': len(self.positions) + 1,
             'symbol': symbol,
             'timeframe': timeframe,
             'direction': direction,
-            'entry_time': bar.name,
-            'entry_price': entry_price,
+            'entry_time': timestamp,
+            'entry_price': price,
             'quantity': quantity,
             'stop_loss': stop_loss,
             'take_profit': take_profit,
@@ -212,50 +259,62 @@ class CryptoBacktester:
         }
         
         return position
-    
-    def _close_position(self, position: Dict, bar: pd.Series, index: int) -> Dict:
-        """Close a trading position"""
-        exit_price = bar['close']
-        exit_time = bar.name
+
+    def _close_position(self, position: Dict, price: float, timestamp) -> Dict:
+        """Close a trading position (accepts primitive values)"""
         
         # Calculate P&L
         if position['direction'] == 'long':
-            pnl = (exit_price - position['entry_price']) * position['quantity']
+            pnl = (price - position['entry_price']) * position['quantity']
         else:
-            pnl = (position['entry_price'] - exit_price) * position['quantity']
+            pnl = (position['entry_price'] - price) * position['quantity']
         
         # Calculate trade metrics
         entry_value = position['entry_price'] * position['quantity']
-        exit_value = exit_price * position['quantity']
+        exit_value = price * position['quantity']
         
         # Determine exit reason
-        if exit_price <= position['stop_loss'] and position['direction'] == 'long':
+        if price <= position['stop_loss'] and position['direction'] == 'long':
             exit_reason = 'stop_loss'
-        elif exit_price >= position['stop_loss'] and position['direction'] == 'short':
+        elif price >= position['stop_loss'] and position['direction'] == 'short':
             exit_reason = 'stop_loss'
-        elif exit_price >= position['take_profit'] and position['direction'] == 'long':
+        elif price >= position['take_profit'] and position['direction'] == 'long':
             exit_reason = 'take_profit'
-        elif exit_price <= position['take_profit'] and position['direction'] == 'short':
+        elif price <= position['take_profit'] and position['direction'] == 'short':
             exit_reason = 'take_profit'
         else:
             exit_reason = 'signal'
         
+        # Handle datetime conversion for duration calculation
+        duration_hours = 0
+        try:
+            if isinstance(timestamp, np.datetime64) and isinstance(position['entry_time'], np.datetime64):
+                 duration_seconds = (timestamp - position['entry_time']).astype('timedelta64[s]').astype(float)
+                 duration_hours = duration_seconds / 3600
+            elif hasattr(timestamp, 'timestamp') and hasattr(position['entry_time'], 'timestamp'):
+                 duration_hours = (timestamp - position['entry_time']).total_seconds() / 3600
+            else:
+                 # Try direct subtraction if they are compatible datetime objects
+                 duration_hours = (timestamp - position['entry_time']).total_seconds() / 3600
+        except:
+            duration_hours = 0
+
         trade_result = {
             'position_id': position['id'],
             'symbol': position['symbol'],
             'timeframe': position['timeframe'],
             'direction': position['direction'],
             'entry_time': position['entry_time'],
-            'exit_time': exit_time,
+            'exit_time': timestamp,
             'entry_price': position['entry_price'],
-            'exit_price': exit_price,
+            'exit_price': price,
             'quantity': position['quantity'],
             'entry_value': entry_value,
             'exit_value': exit_value,
             'pnl': pnl,
             'pnl_pct': (pnl / entry_value) * 100,
             'exit_reason': exit_reason,
-            'duration': (exit_time - position['entry_time']).total_seconds() / 3600,  # hours
+            'duration': duration_hours,
             'stop_loss': position['stop_loss'],
             'take_profit': position['take_profit']
         }
