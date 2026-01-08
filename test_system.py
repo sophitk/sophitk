@@ -85,7 +85,7 @@ def test_indicators():
         from indicators import CryptoIndicators
         
         # Create sample data
-        dates = pd.date_range('2024-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=100, freq='1h')
         sample_data = pd.DataFrame({
             'open': np.random.uniform(40000, 50000, 100),
             'high': np.random.uniform(40000, 50000, 100),
@@ -139,7 +139,7 @@ def test_strategy():
         from strategy import CryptoTradingStrategy
         
         # Create sample data
-        dates = pd.date_range('2024-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=100, freq='1h')
         sample_data = pd.DataFrame({
             'open': np.random.uniform(40000, 50000, 100),
             'high': np.random.uniform(40000, 50000, 100),
@@ -256,7 +256,7 @@ def test_dependencies():
     
     required_packages = [
         'pandas', 'numpy', 'matplotlib', 'seaborn', 'yfinance', 
-        'ta', 'scikit-learn', 'plotly', 'dash', 'ccxt', 'requests'
+        'ta', 'sklearn', 'plotly', 'dash', 'ccxt', 'requests'
     ]
     
     missing_packages = []
