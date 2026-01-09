@@ -109,9 +109,18 @@ class CryptoBacktester:
     
     def _execute_backtest(self, analysis: Dict, symbol: str, timeframe: str) -> Dict:
         """Execute the backtest based on strategy analysis"""
+        # ⚡ OPTIMIZATION: Convert to numpy arrays for faster iteration
+        # Accessing numpy arrays by index is significantly faster than df.iloc[i]
         df = analysis['data']
-        entry_signals = analysis['entry_signals']
-        exit_signals = analysis['exit_signals']
+        entry_signals = analysis['entry_signals'].values
+        exit_signals = analysis['exit_signals'].values
+
+        # Pre-convert essential columns to numpy arrays
+        closes = df['close'].values
+        lows = df['low'].values
+        highs = df['high'].values
+        atrs = df['atr'].values if 'atr' in df.columns else np.full(len(df), np.nan)
+        timestamps = df.index
         
         results = {
             'trades': [],
@@ -123,17 +132,28 @@ class CryptoBacktester:
         capital = self.initial_capital
         current_position = None
         
+        # Helper variables for position management
+        pos_id_counter = len(self.positions)
+
         for i in range(1, len(df)):
-            current_bar = df.iloc[i]
-            previous_bar = df.iloc[i-1]
+            current_close = closes[i]
             
             # Check for exit signals if we have a position
             if current_position:
-                exit_signal = exit_signals.iloc[i]
+                exit_signal = exit_signals[i]
+
+                # Check stop loss efficiently
+                sl_hit = False
+                if current_position['direction'] == 'long':
+                    if lows[i] <= current_position['stop_loss']:
+                        sl_hit = True
+                else:
+                    if highs[i] >= current_position['stop_loss']:
+                        sl_hit = True
                 
-                if exit_signal != 0 or self._check_stop_loss(current_position, current_bar):
+                if exit_signal != 0 or sl_hit:
                     # Close position
-                    trade_result = self._close_position(current_position, current_bar, i)
+                    trade_result = self._close_position(current_position, current_close, timestamps[i], i, sl_hit)
                     results['trades'].append(trade_result)
                     
                     # Update capital
@@ -146,63 +166,76 @@ class CryptoBacktester:
             
             # Check for entry signals if we don't have a position
             if not current_position:
-                entry_signal = entry_signals.iloc[i]
+                entry_signal = entry_signals[i]
                 
                 if entry_signal != 0:
                     # Open new position
+                    pos_id_counter += 1
                     current_position = self._open_position(
-                        entry_signal, current_bar, i, capital, symbol, timeframe
+                        entry_signal, current_close, atrs[i], timestamps[i], i,
+                        capital, symbol, timeframe, pos_id_counter
                     )
                     results['positions'].append(current_position)
             
             # Update equity curve
+            unrealized_pnl = 0
             if current_position:
-                unrealized_pnl = self._calculate_unrealized_pnl(current_position, current_bar)
+                if current_position['direction'] == 'long':
+                    unrealized_pnl = (current_close - current_position['entry_price']) * current_position['quantity']
+                else:
+                    unrealized_pnl = (current_position['entry_price'] - current_close) * current_position['quantity']
                 current_equity = capital + unrealized_pnl
             else:
                 current_equity = capital
             
             results['equity_curve'].append({
-                'timestamp': current_bar.name,
+                'timestamp': timestamps[i],
                 'equity': current_equity,
                 'capital': capital,
-                'unrealized_pnl': unrealized_pnl if current_position else 0
+                'unrealized_pnl': unrealized_pnl
             })
         
         # Close any remaining position at the end
         if current_position:
-            last_bar = df.iloc[-1]
-            trade_result = self._close_position(current_position, last_bar, len(df) - 1)
+            last_idx = len(df) - 1
+            trade_result = self._close_position(current_position, closes[last_idx], timestamps[last_idx], last_idx, False)
             results['trades'].append(trade_result)
         
         return results
     
-    def _open_position(self, signal: int, bar: pd.Series, index: int, 
-                      capital: float, symbol: str, timeframe: str) -> Dict:
-        """Open a new trading position"""
+    def _open_position(self, signal: int, close: float, atr: float, timestamp, index: int,
+                      capital: float, symbol: str, timeframe: str, pos_id: int = None) -> Dict:
+        """Open a new trading position. Supports primitive types."""
+        # Note: 'close' argument replaces 'bar' (Series). 'bar' is no longer used but signature
+        # is kept somewhat consistent for any external calls, although we expect this to be internal.
+        # Actually, for cleanliness, we just update the signature to accept scalars.
+
         direction = 'long' if signal == 1 else 'short'
-        entry_price = bar['close']
+        entry_price = close
         
         # Calculate position size (10% of capital)
         position_value = capital * 0.1
         quantity = position_value / entry_price
         
         # Calculate stop loss and take profit
-        atr = bar['atr'] if not pd.isna(bar['atr']) else entry_price * 0.02
+        atr_val = atr if not np.isnan(atr) else entry_price * 0.02
         
         if direction == 'long':
-            stop_loss = entry_price - (atr * 2)
-            take_profit = entry_price + (atr * 4)  # 1:2 risk-reward
+            stop_loss = entry_price - (atr_val * 2)
+            take_profit = entry_price + (atr_val * 4)  # 1:2 risk-reward
         else:
-            stop_loss = entry_price + (atr * 2)
-            take_profit = entry_price - (atr * 4)
+            stop_loss = entry_price + (atr_val * 2)
+            take_profit = entry_price - (atr_val * 4)
         
+        if pos_id is None:
+             pos_id = len(self.positions) + 1
+
         position = {
-            'id': len(self.positions) + 1,
+            'id': pos_id,
             'symbol': symbol,
             'timeframe': timeframe,
             'direction': direction,
-            'entry_time': bar.name,
+            'entry_time': timestamp,
             'entry_price': entry_price,
             'quantity': quantity,
             'stop_loss': stop_loss,
@@ -213,10 +246,10 @@ class CryptoBacktester:
         
         return position
     
-    def _close_position(self, position: Dict, bar: pd.Series, index: int) -> Dict:
-        """Close a trading position"""
-        exit_price = bar['close']
-        exit_time = bar.name
+    def _close_position(self, position: Dict, close: float, timestamp, index: int, sl_hit: bool = False) -> Dict:
+        """Close a trading position. Supports primitive types."""
+        exit_price = close
+        exit_time = timestamp
         
         # Calculate P&L
         if position['direction'] == 'long':
@@ -229,14 +262,18 @@ class CryptoBacktester:
         exit_value = exit_price * position['quantity']
         
         # Determine exit reason
-        if exit_price <= position['stop_loss'] and position['direction'] == 'long':
+        # Note: Logic slightly adapted to use sl_hit flag passed from loop
+        if sl_hit:
             exit_reason = 'stop_loss'
-        elif exit_price >= position['stop_loss'] and position['direction'] == 'short':
-            exit_reason = 'stop_loss'
-        elif exit_price >= position['take_profit'] and position['direction'] == 'long':
+        elif position['direction'] == 'long' and exit_price >= position['take_profit']:
             exit_reason = 'take_profit'
-        elif exit_price <= position['take_profit'] and position['direction'] == 'short':
+        elif position['direction'] == 'short' and exit_price <= position['take_profit']:
             exit_reason = 'take_profit'
+        # Check stop loss if sl_hit not explicitly passed (legacy support or if checked inside)
+        elif position['direction'] == 'long' and exit_price <= position['stop_loss']:
+             exit_reason = 'stop_loss'
+        elif position['direction'] == 'short' and exit_price >= position['stop_loss']:
+             exit_reason = 'stop_loss'
         else:
             exit_reason = 'signal'
         

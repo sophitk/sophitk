@@ -41,7 +41,7 @@ class CryptoIndicators:
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
         # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_rate_of_change(df['volume'])
+        df['volume_roc'] = ta.momentum.roc(df['volume'])
         
         # Money Flow Index
         df['mfi'] = ta.volume.money_flow_index(
@@ -96,7 +96,12 @@ class CryptoIndicators:
         df['roc'] = ta.momentum.roc(df['close'])
         
         # Relative Vigor Index
-        df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
+        # Manual calculation since ta lib version might differ
+        close_open = df['close'] - df['open']
+        high_low = df['high'] - df['low']
+        rvi_numerator = close_open.rolling(window=10).mean()
+        rvi_denominator = high_low.rolling(window=10).mean()
+        df['rvi'] = rvi_numerator / rvi_denominator
         
         return df
     
@@ -118,18 +123,21 @@ class CryptoIndicators:
         df['keltner_lower'] = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
         
         # Donchian Channel
-        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
-        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
-        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
+        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'], df['close'])
+        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'], df['close'])
+        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'], df['close'])
         
         return df
     
     def add_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add support and resistance levels"""
-        # Pivot Points
-        df['pivot'] = ta.trend.pivot_points(df['high'], df['low'], df['close'])
-        df['support_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='support')
-        df['resistance_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='resistance')
+        # Pivot Points (Standard)
+        # PP = (High + Low + Close) / 3
+        # S1 = (2 * PP) - High
+        # R1 = (2 * PP) - Low
+        df['pivot'] = (df['high'] + df['low'] + df['close']) / 3
+        df['support_1'] = (2 * df['pivot']) - df['high']
+        df['resistance_1'] = (2 * df['pivot']) - df['low']
         
         # Fibonacci Retracement levels (simplified)
         df['fib_236'] = df['high'].rolling(20).max() * 0.236
