@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any, Union
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -123,17 +123,25 @@ class CryptoBacktester:
         capital = self.initial_capital
         current_position = None
         
+        # Convert necessary columns to numpy arrays for faster access
+        close_arr = df['close'].values
+        high_arr = df['high'].values
+        low_arr = df['low'].values
+        atr_arr = df['atr'].values if 'atr' in df.columns else np.full(len(df), np.nan)
+        index_arr = df.index
+
+        entry_signals_arr = entry_signals.values
+        exit_signals_arr = exit_signals.values
+
         for i in range(1, len(df)):
-            current_bar = df.iloc[i]
-            previous_bar = df.iloc[i-1]
-            
             # Check for exit signals if we have a position
             if current_position:
-                exit_signal = exit_signals.iloc[i]
+                exit_signal = exit_signals_arr[i]
                 
-                if exit_signal != 0 or self._check_stop_loss(current_position, current_bar):
+                # Note: We pass raw values instead of Series for performance
+                if exit_signal != 0 or self._check_stop_loss(current_position, low_arr[i], high_arr[i]):
                     # Close position
-                    trade_result = self._close_position(current_position, current_bar, i)
+                    trade_result = self._close_position(current_position, close_arr[i], index_arr[i], i)
                     results['trades'].append(trade_result)
                     
                     # Update capital
@@ -146,63 +154,64 @@ class CryptoBacktester:
             
             # Check for entry signals if we don't have a position
             if not current_position:
-                entry_signal = entry_signals.iloc[i]
+                entry_signal = entry_signals_arr[i]
                 
                 if entry_signal != 0:
                     # Open new position
                     current_position = self._open_position(
-                        entry_signal, current_bar, i, capital, symbol, timeframe
+                        entry_signal, close_arr[i], atr_arr[i], index_arr[i], i, capital, symbol, timeframe
                     )
                     results['positions'].append(current_position)
             
             # Update equity curve
             if current_position:
-                unrealized_pnl = self._calculate_unrealized_pnl(current_position, current_bar)
+                unrealized_pnl = self._calculate_unrealized_pnl(current_position, close_arr[i])
                 current_equity = capital + unrealized_pnl
             else:
                 current_equity = capital
+                unrealized_pnl = 0
             
             results['equity_curve'].append({
-                'timestamp': current_bar.name,
+                'timestamp': index_arr[i],
                 'equity': current_equity,
                 'capital': capital,
-                'unrealized_pnl': unrealized_pnl if current_position else 0
+                'unrealized_pnl': unrealized_pnl
             })
         
         # Close any remaining position at the end
         if current_position:
-            last_bar = df.iloc[-1]
-            trade_result = self._close_position(current_position, last_bar, len(df) - 1)
+            last_idx = len(df) - 1
+            trade_result = self._close_position(current_position, close_arr[last_idx], index_arr[last_idx], last_idx)
             results['trades'].append(trade_result)
         
         return results
     
-    def _open_position(self, signal: int, bar: pd.Series, index: int, 
+    def _open_position(self, signal: int, close_price: float, atr: float, entry_time: Any, index: int,
                       capital: float, symbol: str, timeframe: str) -> Dict:
         """Open a new trading position"""
         direction = 'long' if signal == 1 else 'short'
-        entry_price = bar['close']
+        entry_price = close_price
         
         # Calculate position size (10% of capital)
         position_value = capital * 0.1
         quantity = position_value / entry_price
         
         # Calculate stop loss and take profit
-        atr = bar['atr'] if not pd.isna(bar['atr']) else entry_price * 0.02
+        atr_val = atr if not np.isnan(atr) else entry_price * 0.02
         
         if direction == 'long':
-            stop_loss = entry_price - (atr * 2)
-            take_profit = entry_price + (atr * 4)  # 1:2 risk-reward
+            stop_loss = entry_price - (atr_val * 2)
+            take_profit = entry_price + (atr_val * 4)  # 1:2 risk-reward
         else:
-            stop_loss = entry_price + (atr * 2)
-            take_profit = entry_price - (atr * 4)
+            stop_loss = entry_price + (atr_val * 2)
+            take_profit = entry_price - (atr_val * 4)
         
         position = {
             'id': len(self.positions) + 1,
             'symbol': symbol,
             'timeframe': timeframe,
             'direction': direction,
-            'entry_time': bar.name,
+            'entry_time': entry_time,
             'entry_price': entry_price,
             'quantity': quantity,
             'stop_loss': stop_loss,
@@ -213,10 +222,9 @@ class CryptoBacktester:
         
         return position
     
-    def _close_position(self, position: Dict, bar: pd.Series, index: int) -> Dict:
+    def _close_position(self, position: Dict, close_price: float, exit_time: Any, index: int) -> Dict:
         """Close a trading position"""
-        exit_price = bar['close']
-        exit_time = bar.name
+        exit_price = close_price
         
         # Calculate P&L
         if position['direction'] == 'long':
@@ -262,16 +270,15 @@ class CryptoBacktester:
         
         return trade_result
     
-    def _check_stop_loss(self, position: Dict, bar: pd.Series) -> bool:
+    def _check_stop_loss(self, position: Dict, low_price: float, high_price: float) -> bool:
         """Check if stop loss has been hit"""
         if position['direction'] == 'long':
-            return bar['low'] <= position['stop_loss']
+            return low_price <= position['stop_loss']
         else:
-            return bar['high'] >= position['stop_loss']
+            return high_price >= position['stop_loss']
     
-    def _calculate_unrealized_pnl(self, position: Dict, bar: pd.Series) -> float:
+    def _calculate_unrealized_pnl(self, position: Dict, current_price: float) -> float:
         """Calculate unrealized P&L for open position"""
-        current_price = bar['close']
         
         if position['direction'] == 'long':
             return (current_price - position['entry_price']) * position['quantity']

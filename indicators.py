@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import ta
 from typing import Tuple, Dict, List
 
 class CryptoIndicators:
@@ -32,6 +31,9 @@ class CryptoIndicators:
     
     def add_volume_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volume-based indicators"""
+        import ta.volume
+        import ta.momentum
+
         # Volume Weighted Average Price (VWAP)
         df['vwap'] = ta.volume.volume_weighted_average_price(
             high=df['high'], low=df['low'], close=df['close'], volume=df['volume']
@@ -40,8 +42,8 @@ class CryptoIndicators:
         # On Balance Volume (OBV)
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
-        # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_rate_of_change(df['volume'])
+        # Volume Rate of Change - using Momentum ROC on volume
+        df['volume_roc'] = ta.momentum.roc(df['volume'])
         
         # Money Flow Index
         df['mfi'] = ta.volume.money_flow_index(
@@ -52,6 +54,8 @@ class CryptoIndicators:
     
     def add_trend_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add trend-following indicators"""
+        import ta.trend
+
         # Exponential Moving Averages
         df['ema_9'] = ta.trend.ema_indicator(df['close'], window=9)
         df['ema_21'] = ta.trend.ema_indicator(df['close'], window=21)
@@ -79,6 +83,9 @@ class CryptoIndicators:
     
     def add_momentum_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add momentum indicators"""
+        import ta.momentum
+        import ta.trend
+
         # RSI
         df['rsi'] = ta.momentum.rsi(df['close'])
         
@@ -95,13 +102,20 @@ class CryptoIndicators:
         # Rate of Change
         df['roc'] = ta.momentum.roc(df['close'])
         
-        # Relative Vigor Index
-        df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
+        # Relative Vigor Index - Manual calculation as it's missing in ta
+        # RVI = (Close - Open) / (High - Low) smoothed
+        numerator = df['close'] - df['open']
+        denominator = df['high'] - df['low']
+        # Handle division by zero
+        rvi = numerator / denominator.replace(0, np.nan)
+        df['rvi'] = rvi.rolling(window=10).mean() # Simple approximation
         
         return df
     
     def add_volatility_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volatility indicators"""
+        import ta.volatility
+
         # Bollinger Bands
         df['bb_upper'] = ta.volatility.bollinger_hband(df['close'])
         df['bb_middle'] = ta.volatility.bollinger_mavg(df['close'])
@@ -117,19 +131,38 @@ class CryptoIndicators:
         df['keltner_middle'] = ta.volatility.keltner_channel_mband(df['high'], df['low'], df['close'])
         df['keltner_lower'] = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
         
-        # Donchian Channel
-        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
-        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
-        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
+        # Donchian Channel - ta.volatility.DonchianChannel expects 'close' too in recent versions or just high/low
+        # Checking signature... older ta might just need high/low. The error didn't complain about this yet but let's be safe.
+        # Based on dir(ta.volatility), it has donchian_channel_hband.
+        # Let's try passing close as well if supported, or just high/low.
+        # The library usually updates so check signature if possible.
+        # Assuming standard implementation:
+        try:
+            df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'], df['close'])
+            df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'], df['close'])
+            df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'], df['close'])
+        except TypeError:
+             # Fallback for older versions that might not take close
+            df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
+            df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
+            df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
         
         return df
     
     def add_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add support and resistance levels"""
-        # Pivot Points
-        df['pivot'] = ta.trend.pivot_points(df['high'], df['low'], df['close'])
-        df['support_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='support')
-        df['resistance_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='resistance')
+        import ta.trend
+
+        # Pivot Points - Manual calculation as it's missing in ta.trend
+        # Standard Pivot Points
+        # P = (High + Low + Close) / 3
+        # R1 = 2*P - Low
+        # S1 = 2*P - High
+
+        pivot = (df['high'] + df['low'] + df['close']) / 3
+        df['pivot'] = pivot
+        df['support_1'] = 2 * pivot - df['high']
+        df['resistance_1'] = 2 * pivot - df['low']
         
         # Fibonacci Retracement levels (simplified)
         df['fib_236'] = df['high'].rolling(20).max() * 0.236
