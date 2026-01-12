@@ -256,7 +256,7 @@ def test_dependencies():
     
     required_packages = [
         'pandas', 'numpy', 'matplotlib', 'seaborn', 'yfinance', 
-        'ta', 'scikit-learn', 'plotly', 'dash', 'ccxt', 'requests'
+        'ta', 'sklearn', 'plotly', 'dash', 'ccxt', 'requests'
     ]
     
     missing_packages = []
