@@ -41,7 +41,9 @@ class CryptoIndicators:
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
         # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_rate_of_change(df['volume'])
+        # Manual implementation as ta 0.11.0 missing volume_rate_of_change
+        # Default window is typically 12 or 14. We use 12 to match common defaults.
+        df['volume_roc'] = df['volume'].pct_change(periods=12) * 100
         
         # Money Flow Index
         df['mfi'] = ta.volume.money_flow_index(
@@ -96,40 +98,76 @@ class CryptoIndicators:
         df['roc'] = ta.momentum.roc(df['close'])
         
         # Relative Vigor Index
-        df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
+        # Note: ta 0.11.0 missing relative_vigor_index, and it is not used in signals
+        # df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
         
         return df
     
     def add_volatility_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volatility indicators"""
-        # Bollinger Bands
-        df['bb_upper'] = ta.volatility.bollinger_hband(df['close'])
-        df['bb_middle'] = ta.volatility.bollinger_mavg(df['close'])
-        df['bb_lower'] = ta.volatility.bollinger_lband(df['close'])
-        df['bb_width'] = ta.volatility.bollinger_wband(df['close'])
-        df['bb_percent'] = ta.volatility.bollinger_pband(df['close'])
+        # Performance Optimization: Calculate rolling stats once per group
+        close = df['close']
+        high = df['high']
+        low = df['low']
+
+        # Bollinger Bands (window=20, std=2)
+        bb_window = 20
+        bb_ma = close.rolling(window=bb_window).mean()
+        bb_std = close.rolling(window=bb_window).std()
+
+        df['bb_middle'] = bb_ma
+        df['bb_upper'] = bb_ma + (2 * bb_std)
+        df['bb_lower'] = bb_ma - (2 * bb_std)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / bb_ma * 100
+        df['bb_percent'] = (close - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
         
         # Average True Range
-        df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'])
+        df['atr'] = ta.volatility.average_true_range(high, low, close)
+
+        # Keltner Channel (window=20, window_atr=10)
+        # Note: ta library defaults are window=20, window_atr=10.
+        kc_window = 20
+        kc_atr_window = 10
+
+        kc_middle = close.ewm(span=kc_window, min_periods=kc_window, adjust=False).mean()
+        df['keltner_middle'] = kc_middle
+
+        # Calculate ATR for Keltner if needed (distinct from main ATR usually)
+        # Manual TR calculation to be safe and fast
+        prev_close = close.shift(1)
+        tr = pd.concat([high - low,
+                       (high - prev_close).abs(),
+                       (low - prev_close).abs()], axis=1).max(axis=1)
         
-        # Keltner Channel
-        df['keltner_upper'] = ta.volatility.keltner_channel_hband(df['high'], df['low'], df['close'])
-        df['keltner_middle'] = ta.volatility.keltner_channel_mband(df['high'], df['low'], df['close'])
-        df['keltner_lower'] = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
+        # Keltner Channel in ta library uses AverageTrueRange class which uses Wilder's Smoothing
+        # Wilder's Smoothing is equivalent to EMA with alpha=1/window
+        kc_atr = tr.ewm(alpha=1/kc_atr_window, min_periods=kc_atr_window, adjust=False).mean()
         
-        # Donchian Channel
-        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
-        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
-        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
+        df['keltner_upper'] = kc_middle + (2 * kc_atr)
+        df['keltner_lower'] = kc_middle - (2 * kc_atr)
+
+        # Donchian Channel (window=20)
+        dc_window = 20
+        dc_high = high.rolling(window=dc_window).max()
+        dc_low = low.rolling(window=dc_window).min()
+
+        df['donchian_upper'] = dc_high
+        df['donchian_lower'] = dc_low
+        df['donchian_middle'] = (dc_high + dc_low) / 2
         
         return df
     
     def add_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add support and resistance levels"""
-        # Pivot Points
-        df['pivot'] = ta.trend.pivot_points(df['high'], df['low'], df['close'])
-        df['support_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='support')
-        df['resistance_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='resistance')
+        # Pivot Points (Manual implementation)
+        # Classic Pivot Point = (High + Low + Close) / 3
+        df['pivot'] = (df['high'] + df['low'] + df['close']) / 3
+
+        # Support 1 = (2 * Pivot) - High
+        df['support_1'] = (2 * df['pivot']) - df['high']
+
+        # Resistance 1 = (2 * Pivot) - Low
+        df['resistance_1'] = (2 * df['pivot']) - df['low']
         
         # Fibonacci Retracement levels (simplified)
         df['fib_236'] = df['high'].rolling(20).max() * 0.236
