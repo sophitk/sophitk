@@ -1,0 +1,3 @@
+## 2024-05-22 - Dependency Breaking Changes & Pandas Deprecations
+**Learning:** The project's dependencies have evolved significantly. `ta` library 0.11.0 removed several indicators (`volume_rate_of_change`, `relative_vigor_index`, `pivot_points`) and changed signatures (`donchian_channel_*` needs `close`). Pandas 2.2 deprecated frequency aliases ('H' -> 'h', 'T' -> 'min') and `fillna(method='ffill')`.
+**Action:** When working on this repo, check dependency versions carefully. Use `ffill()` instead of `fillna(method='ffill')`, use lowercase frequency aliases, and verify `ta` library function availability before use.
