@@ -85,7 +85,7 @@ def test_indicators():
         from indicators import CryptoIndicators
         
         # Create sample data
-        dates = pd.date_range('2024-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=100, freq='1h')
         sample_data = pd.DataFrame({
             'open': np.random.uniform(40000, 50000, 100),
             'high': np.random.uniform(40000, 50000, 100),
@@ -139,7 +139,7 @@ def test_strategy():
         from strategy import CryptoTradingStrategy
         
         # Create sample data
-        dates = pd.date_range('2024-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=100, freq='1h')
         sample_data = pd.DataFrame({
             'open': np.random.uniform(40000, 50000, 100),
             'high': np.random.uniform(40000, 50000, 100),
@@ -263,7 +263,10 @@ def test_dependencies():
     
     for package in required_packages:
         try:
-            __import__(package)
+            if package == 'scikit-learn':
+                __import__('sklearn')
+            else:
+                __import__(package)
             print(f"✅ {package} available")
         except ImportError:
             print(f"❌ {package} missing")
