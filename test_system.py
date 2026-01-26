@@ -85,7 +85,7 @@ def test_indicators():
         from indicators import CryptoIndicators
         
         # Create sample data
-        dates = pd.date_range('2024-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=100, freq='1h')
         sample_data = pd.DataFrame({
             'open': np.random.uniform(40000, 50000, 100),
             'high': np.random.uniform(40000, 50000, 100),
@@ -139,7 +139,7 @@ def test_strategy():
         from strategy import CryptoTradingStrategy
         
         # Create sample data
-        dates = pd.date_range('2024-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=100, freq='1h')
         sample_data = pd.DataFrame({
             'open': np.random.uniform(40000, 50000, 100),
             'high': np.random.uniform(40000, 50000, 100),
@@ -256,7 +256,7 @@ def test_dependencies():
     
     required_packages = [
         'pandas', 'numpy', 'matplotlib', 'seaborn', 'yfinance', 
-        'ta', 'scikit-learn', 'plotly', 'dash', 'ccxt', 'requests'
+        'ta', 'sklearn', 'plotly', 'dash', 'ccxt', 'requests'
     ]
     
     missing_packages = []
@@ -264,10 +264,13 @@ def test_dependencies():
     for package in required_packages:
         try:
             __import__(package)
-            print(f"✅ {package} available")
+            # Display name mapping for clarity
+            display_name = 'scikit-learn' if package == 'sklearn' else package
+            print(f"✅ {display_name} available")
         except ImportError:
-            print(f"❌ {package} missing")
-            missing_packages.append(package)
+            display_name = 'scikit-learn' if package == 'sklearn' else package
+            print(f"❌ {display_name} missing")
+            missing_packages.append(display_name)
     
     if missing_packages:
         print(f"\n⚠️  Missing packages: {', '.join(missing_packages)}")
