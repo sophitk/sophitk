@@ -1,0 +1,3 @@
+## 2024-05-21 - Python Loop Optimization & Environment Compatibility
+**Learning:** Converting Pandas Series access (`df.iloc[i]`) to NumPy array indexing (`arr[i]`) inside loops provided a massive ~12.8x speedup (2.57s -> 0.20s). Also, running older Python projects in Python 3.12+ environments triggers numerous dependency and deprecation issues (numpy build failures, ta library breaking changes, pandas deprecations).
+**Action:** Always prefer NumPy arrays for heavy iteration. Be prepared to fix `ta` library calls (manual implementation of missing indicators) and Pandas deprecations (`ffill()`, lowercase frequency aliases) when upgrading environments.
