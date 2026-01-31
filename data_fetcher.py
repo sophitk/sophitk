@@ -233,7 +233,7 @@ class CryptoDataFetcher:
         df = df.sort_index()
         
         # Forward fill missing values (if any)
-        df = df.fillna(method='ffill')
+        df = df.ffill()
         
         # Remove rows with still missing values
         df = df.dropna()
@@ -250,11 +250,11 @@ class CryptoDataFetcher:
         
         # Convert timeframe to pandas offset
         timeframe_map = {
-            '1m': '1T', '5m': '5T', '15m': '15T', '30m': '30T',
-            '1h': '1H', '4h': '4H', '1d': 'D'
+            '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min',
+            '1h': '1h', '4h': '4h', '1d': 'D'
         }
         
-        pandas_timeframe = timeframe_map.get(timeframe, '1H')
+        pandas_timeframe = timeframe_map.get(timeframe, '1h')
         
         # Resample
         resampled = df.resample(pandas_timeframe).agg({
