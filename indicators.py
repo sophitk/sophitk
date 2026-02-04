@@ -41,7 +41,9 @@ class CryptoIndicators:
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
         # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_rate_of_change(df['volume'])
+        # Fix: ta.volume.volume_rate_of_change is missing in recent versions
+        # Using manual calculation (standard 12-period ROC on volume)
+        df['volume_roc'] = df['volume'].pct_change(periods=12) * 100
         
         # Money Flow Index
         df['mfi'] = ta.volume.money_flow_index(
@@ -96,18 +98,32 @@ class CryptoIndicators:
         df['roc'] = ta.momentum.roc(df['close'])
         
         # Relative Vigor Index
-        df['rvi'] = ta.momentum.relative_vigor_index(df['open'], df['high'], df['low'], df['close'])
+        # Fix: ta.momentum.relative_vigor_index is missing in recent versions
+        # Implementing a simplified calculation: (Close-Open)/(High-Low) smoothed
+        numerator = df['close'] - df['open']
+        denominator = df['high'] - df['low']
+        # Avoid division by zero
+        denominator = denominator.replace(0, np.nan)
+        rvi_raw = numerator / denominator
+        # Smooth with 10-period SMA
+        df['rvi'] = rvi_raw.rolling(window=10).mean()
         
         return df
     
     def add_volatility_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volatility indicators"""
         # Bollinger Bands
-        df['bb_upper'] = ta.volatility.bollinger_hband(df['close'])
-        df['bb_middle'] = ta.volatility.bollinger_mavg(df['close'])
-        df['bb_lower'] = ta.volatility.bollinger_lband(df['close'])
-        df['bb_width'] = ta.volatility.bollinger_wband(df['close'])
-        df['bb_percent'] = ta.volatility.bollinger_pband(df['close'])
+        # Optimized: Manual calculation avoids library overhead for simple rolling stats
+        close = df['close']
+        bb_window = 20
+        bb_std = 2
+
+        df['bb_middle'] = close.rolling(window=bb_window).mean()
+        std_dev = close.rolling(window=bb_window).std()
+        df['bb_upper'] = df['bb_middle'] + (std_dev * bb_std)
+        df['bb_lower'] = df['bb_middle'] - (std_dev * bb_std)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle'] * 100
+        df['bb_percent'] = (close - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
         
         # Average True Range
         df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'])
@@ -118,18 +134,22 @@ class CryptoIndicators:
         df['keltner_lower'] = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
         
         # Donchian Channel
-        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'])
-        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'])
-        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'])
+        # Fix: Ensure 'close' argument is passed as per new ta library requirements
+        df['donchian_upper'] = ta.volatility.donchian_channel_hband(df['high'], df['low'], df['close'])
+        df['donchian_middle'] = ta.volatility.donchian_channel_mband(df['high'], df['low'], df['close'])
+        df['donchian_lower'] = ta.volatility.donchian_channel_lband(df['high'], df['low'], df['close'])
         
         return df
     
     def add_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add support and resistance levels"""
         # Pivot Points
-        df['pivot'] = ta.trend.pivot_points(df['high'], df['low'], df['close'])
-        df['support_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='support')
-        df['resistance_1'] = ta.trend.pivot_points(df['high'], df['low'], df['close'], mode='resistance')
+        # Fix: ta.trend.pivot_points is missing in recent versions
+        # Manual calculation
+        pivot = (df['high'] + df['low'] + df['close']) / 3
+        df['pivot'] = pivot
+        df['support_1'] = (2 * pivot) - df['high']
+        df['resistance_1'] = (2 * pivot) - df['low']
         
         # Fibonacci Retracement levels (simplified)
         df['fib_236'] = df['high'].rolling(20).max() * 0.236
