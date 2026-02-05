@@ -233,7 +233,7 @@ class CryptoDataFetcher:
         df = df.sort_index()
         
         # Forward fill missing values (if any)
-        df = df.fillna(method='ffill')
+        df = df.ffill()
         
         # Remove rows with still missing values
         df = df.dropna()
